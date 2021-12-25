@@ -1,0 +1,94 @@
+version: '2'
+services:
+  cassandra1:
+    image: cassandra
+    volumes:
+      - ./tmp/db1:/var/lib/cassandra
+    ports:
+      - "9042:9042"
+    environment:
+      - CASSANDRA_CLUSTER_NAME=dev_cluster
+      - CASSANDRA_SEEDS=cassandra1
+      # Exposing ports for inter cluste communication
+    expose:
+      - 7000
+      - 7001
+      - 7199
+      - 9042
+      - 9160
+    # Cassandra ulimt recommended settings
+    ulimits:
+      memlock: -1
+      nproc: 32768
+      nofile: 100000
+    command: bash -c 'if [ -z "$$(ls -A /var/lib/cassandra/)" ] ; then sleep 60; fi && /docker-entrypoint.sh cassandra -f'
+
+  cassandra2:
+    image: cassandra
+    volumes:
+      - ./tmp/db2:/var/lib/cassandra
+    ports:
+      - "9142:9042"
+    environment:
+          - CASSANDRA_CLUSTER_NAME=dev_cluster
+          - CASSANDRA_SEEDS=cassandra1
+      # Since DC1N1 is the seed node
+    depends_on:
+          - cassandra1
+    # Exposing ports for inter cluste communication. Note this is already
+    # done by the docker file. Just being explict about it.
+    expose:
+      # Intra-node communication
+      - 7000
+      # TLS intra-node communication
+      - 7001
+      # JMX
+      - 7199
+      # CQL
+      - 9042
+      # Thrift service
+      - 9160
+    # Cassandra ulimt recommended settings
+    ulimits:
+      memlock: -1
+      nproc: 32768
+      nofile: 100000
+    command: bash -c 'if [ -z "$$(ls -A /var/lib/cassandra/)" ] ; then sleep 60; fi && /docker-entrypoint.sh cassandra -f'
+
+  redis:
+    image: redis
+    volumes:
+      - ./tmp/redis:/var/lib/redis/data
+    expose:
+      - 6379
+
+  proxy:
+    build: ./proxy
+    volumes:
+      - ./proxy:/myapp
+    ports:
+      - "9292:9292"
+    expose:
+      - 9292
+    depends_on:
+      - redis
+    environment:
+      - PROXY_PORT=9292
+    restart:
+      "always"
+    links:
+      - "warehouse"
+
+  warehouse:
+    build: ./warehouse
+    volumes:
+      - ./warehouse:/myapp
+    expose:
+      - 9191
+    depends_on:
+      - cassandra1
+      - cassandra2
+    environment:
+      - WAREHOUSE_PORT=9191
+    restart:
+      "always"
